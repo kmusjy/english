@@ -23,7 +23,7 @@ h1{font-size:20px;margin:6px 0 2px}
 .idrow input[type=text]:focus{outline:3px solid #2f5d8a44}
 .idwarn{color:#c0392b;font-weight:700;font-size:14px;min-height:0;margin-top:6px}
 .idopt{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px}
-.hintchip{font-size:13px;font-weight:700;color:#7a4b00;background:#ffe9a8;border:1px solid #f0c75e;border-radius:99px;padding:1px 8px;margin-left:2px;white-space:nowrap;align-self:center}
+.hintchip{font-size:13px;font-weight:700;color:#7a4b00;background:#ffe9a8;border:1px solid #f0c75e;border-radius:99px;padding:1px 8px;margin-top:3px;white-space:nowrap}
 .submitbox{background:#e8f1fb;border:2px solid var(--accent);border-radius:12px;padding:12px 14px;margin-top:10px;font-size:15px;line-height:1.7}
 .submitbox a.btnlink{display:inline-block;margin-top:6px;padding:10px 16px;background:var(--accent);color:#fff;border-radius:10px;font-weight:700;text-decoration:none}
 .brit{font-size:12px;color:var(--mute);margin:0 0 10px}
@@ -37,14 +37,17 @@ button.small{padding:6px 10px;font-size:14px;min-height:38px}
 .score{background:#eef3f8;border:1px solid #cddbe9;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-weight:600;position:sticky;top:6px;z-index:5}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
 .card.active{border-color:var(--accent);box-shadow:0 0 0 2px #2f5d8a22}
-.head{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.head{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+.head button{white-space:nowrap;padding:8px 10px;font-size:14px;min-height:40px;flex:1 1 auto}
+.head .num{flex:0 0 auto}
 .num{color:var(--mute);font-size:13px;font-weight:600;min-width:20px}
 .sent{font-size:18px;line-height:2.1;margin:4px 0 6px}
-.bg{display:inline-flex;flex-wrap:wrap;align-items:flex-end;gap:4px 4px;margin:0 2px;vertical-align:baseline;max-width:100%}
+.bg{display:inline-flex;flex-wrap:wrap;align-items:flex-start;gap:6px 6px;margin:0 2px;vertical-align:middle;max-width:100%}
 .badge{font-size:12px;font-weight:700;color:#fff;background:#d9480f;border-radius:99px;padding:2px 10px}
 .card.hard{border-color:#e8a27c;box-shadow:0 0 0 2px #d9480f22}
 .cnt{font-size:11px;color:var(--mute);margin-left:2px;white-space:nowrap}
-input.bi{font:inherit;font-size:17px;padding:1px 4px;border:0;border-bottom:2px solid #9aa4b2;background:#f5f8fb;border-radius:4px 4px 0 0;text-align:center;min-width:0;max-width:100%}
+input.bi{font:inherit;font-size:16px;padding:6px 4px;width:96px;height:38px;border:0;border-bottom:2px solid #9aa4b2;background:#f5f8fb;border-radius:4px 4px 0 0;text-align:center;min-width:0;max-width:100%}
+.cell{display:inline-flex;flex-direction:column;align-items:center;vertical-align:top}
 input.bi:focus{outline:0;border-bottom-color:var(--accent);background:#eaf1f8}
 input.bi.ok{border-bottom-color:var(--ok);background:#e6f4ea;color:#1b5e3a}
 input.bi.bad{border-bottom-color:var(--bad);background:#fdeaea;color:#a02a1f}
@@ -210,7 +213,7 @@ function refreshPlayButtons(){
   document.querySelectorAll('.card button[data-a="pause"]').forEach(b=>{
     const i=+b.dataset.i, mine = playing && playing.idx===i;
     b.disabled = !mine;
-    b.textContent = (mine && audio.paused) ? '▶ 이어 듣기' : '⏸ 일시정지';
+    b.textContent = (mine && audio.paused) ? '▶ 계속' : '⏸ 정지';
   });
 }
 function playSeg(i, rate=1, track=false){
@@ -403,12 +406,12 @@ function sentenceHtml(l,i){
       const val = s.peeked ? w : (s.vals[idx]||'');
       let cls = 'bi';
       if(s.peeked) cls += ' shown'; else if(s.checked && s.res[idx]===true) cls += ' ok'; else if(s.checked && s.res[idx]===false) cls += ' bad';
-      const width = Math.max(4, norm(w).length+2);
-      h += `<input class="${cls}" data-i="${i}" data-k="${idx}" value="${esc(val)}" ${s.peeked?'readonly':''} style="width:${width}ch" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="빈칸 ${idx+1}">`;
+      h += `<span class="cell"><input class="${cls}" data-i="${i}" data-k="${idx}" value="${esc(val)}" ${s.peeked?'readonly':''} autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="빈칸 ${idx+1}">`;
       if(!s.peeked && s.hint && s.checked && s.res[idx]===false){
         const clean = w.replace(/[^A-Za-z0-9']/g,''), n = s.hint>=2 ? 2 : 1;
         h += `<span class="hintchip" title="힌트">💡 ${esc(clean.slice(0, Math.min(n, Math.max(1, clean.length-1))))}…</span>`;
       }
+      h += `</span>`;
     });
     h += `</span>`;
   });
@@ -455,8 +458,8 @@ function render(focusBad){
       <div class="head"><span class="num">${i+1}</span>${l.badge?`<span class="badge">🔥 ${esc(l.badge)}</span>`:''}
         <button data-a="play" data-i="${i}" ${ok?'':'disabled'}>▶ 듣기</button>
         <button data-a="slow" data-i="${i}" ${ok?'':'disabled'}>🐢 느리게</button>
-        <button data-a="back" data-i="${i}" ${ok?'':'disabled'} title="2초 전부터 다시 듣기">⏪ 2초</button>
-        <button data-a="pause" data-i="${i}" disabled>⏸ 일시정지</button>
+        <button data-a="back" data-i="${i}" ${ok?'':'disabled'} title="2초 전부터 다시 듣기">⏪ 2초 전</button>
+        <button data-a="pause" data-i="${i}" disabled>⏸ 정지</button>
       </div>
       <div class="sent">${sentenceHtml(l,i)}</div>
       ${showKo && l.ko ? `<div class="ko">${esc(l.ko)}</div>`:''}
@@ -464,7 +467,6 @@ function render(focusBad){
         <button data-a="check" data-i="${i}" class="primary" ${s.peeked?'disabled':''}>확인</button>
         ${(!s.peeked && failedCount(i)>=3 && !(s.checked && s.res.every(x=>x===true))) ? `<button data-a="hint" data-i="${i}" ${(s.hint||0)>=2?'disabled':''}>${(s.hint||0)===0?'💡 힌트 (첫 글자)':(s.hint===1?'💡 힌트 더 보기 (두 글자)':'💡 힌트 모두 사용')}</button>` : ''}
         <button data-a="reveal" data-i="${i}">답 보기</button>
-        <button data-a="reset" data-i="${i}" class="small">다시 풀기</button>
       </div>`:''}
       ${statusHtml(l,i)}
     </div>`;
@@ -474,7 +476,6 @@ function render(focusBad){
     <div style="font-size:12px;color:var(--mute);margin-top:4px">결과 복사에는 점수와 함께 듣기·확인·답 보기 기록, 그리고 이 메모가 들어가요.</div></div>
   <div class="bar">
     <button id="checkall" class="primary">전체 확인</button>
-    <button id="resetall">전체 다시 풀기</button>
     <button id="copyres">결과 복사</button>
   </div>
   ${(CFG.submitUrl||'').trim() ? `<p class="brit">결과는 "결과 복사"를 누른 뒤 설문지의 '결과' 칸에 붙여넣어 제출하세요.</p>` : ''}
@@ -488,7 +489,6 @@ function render(focusBad){
   $('#kosw').onchange = e=>{ showKo = e.target.checked; render(); };
   if($('#tt')) $('#tt').onclick = ()=>{ teacherOn=false; if(location.hash==='#teacher') history.replaceState(null,'',location.pathname+location.search); render(); };
   $('#checkall').onclick = ()=>{ CFG.lines.forEach((l,i)=>{ const s=ST[i]; if(s && (s.checked || s.vals.some(v=>(v||'').trim()))) checkLine(i); }); render(); };
-  $('#resetall').onclick = ()=>{ if(confirm('모든 문장을 처음부터 다시 풀까요? (풀이 기록은 남아요)')){ ST={}; GLOG.resetAll++; render(); } };
   $('#memo').oninput = e=>{ MEMO = e.target.value; persist(); };
   $('#copyres').onclick = copyResult;
 
@@ -506,7 +506,6 @@ function render(focusBad){
         if(!revealLine(i)){ const st=$(`#c${i} .st`); if(st) st.textContent='이미 모두 맞았어요!'; return; }
         render();
       }
-      else if(a==='reset'){ L(i).resets++; delete ST[i]; render(); const f=$(`#c${i} input.bi`); if(f) f.focus(); }
     };
   });
   app.querySelectorAll('input.bi').forEach(inp=>{
