@@ -13,11 +13,13 @@ h1{font-size:20px;margin:6px 0 2px}
 .sub{color:var(--mute);font-size:14px;margin:0 0 12px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px}
 .bar input[type=text]{flex:1 1 110px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:15px}
-button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);padding:8px 12px;border-radius:8px;cursor:pointer}
+html,body{overscroll-behavior-y:contain}
+button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);padding:10px 14px;min-height:44px;border-radius:10px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:rgba(47,93,138,.25)}
+button:active{transform:scale(.97);background:#dfe8f1}
 button:hover{background:#f0eee7}
 button:disabled{opacity:.4;cursor:not-allowed}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-button.small{padding:4px 8px;font-size:13px}
+button.small{padding:6px 10px;font-size:14px;min-height:38px}
 .score{background:#eef3f8;border:1px solid #cddbe9;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-weight:600;position:sticky;top:6px;z-index:5}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
 .card.active{border-color:var(--accent);box-shadow:0 0 0 2px #2f5d8a22}
@@ -80,12 +82,112 @@ let GLOG = {resetAll:0};
 let MEMO = '';
 function L(i){ return LOG[i] || (LOG[i] = {listens:0, slow:0, tries:[], reveal:null, resets:0}); }
 let playing = null;
+let SAVED_ID = '', SAVED_NM = '', RESTORED = false, STORAGE_OK = true;
 let tap = {on:false, i:0, phase:'start', hist:[]};
 
 function fmt(t){ return (t==null||isNaN(t)) ? '' : (+t).toFixed(2); }
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function ready(l){ return l.start!=null && l.end!=null && l.end>l.start; }
 function norm(s){ return String(s||'').toLowerCase().replace(/[’‘`]/g,"'").replace(/[^a-z0-9']/g,''); }
+
+
+/* ---------- 자동 저장 (새로고침해도 풀던 내용 유지) ---------- */
+function hashStr(t){ let h=5381; for(let i=0;i<t.length;i++) h=((h<<5)+h+t.charCodeAt(i))|0; return (h>>>0).toString(36); }
+function storeKey(){ return 'lf1:' + hashStr((CFG.title||'') + '|' + CFG.lines.map(l=>l.text).join('\n')); }
+function saveState(){
+  if(teacherOn) return;
+  try{
+    localStorage.setItem(storeKey(), JSON.stringify({ST, LOG, GLOG, MEMO, showKo,
+      sid:($('#sid')||{}).value||SAVED_ID, snm:($('#snm')||{}).value||SAVED_NM}));
+  }catch(e){ STORAGE_OK = false; }
+}
+let saveTimer = null;
+function persist(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveState, 150); }
+function hasProgress(){
+  return Object.keys(LOG).length>0 || Object.keys(ST).some(k=>{ const s=ST[k]; return s && (s.checked||s.peeked||(s.vals||[]).some(v=>(v||'').trim())); }) || (MEMO||'').trim();
+}
+function loadState(){
+  if(teacherOn) return;
+  try{
+    localStorage.setItem('lf1:test','1'); localStorage.removeItem('lf1:test');
+    const raw = localStorage.getItem(storeKey()); if(!raw) return;
+    const d = JSON.parse(raw);
+    ST = d.ST||{}; LOG = d.LOG||{}; GLOG = d.GLOG||{resetAll:0}; MEMO = d.MEMO||''; showKo = d.showKo!==false;
+    SAVED_ID = d.sid||''; SAVED_NM = d.snm||'';
+    RESTORED = hasProgress();
+  }catch(e){ STORAGE_OK = false; }
+}
+function clearAll(){
+  try{ localStorage.removeItem(storeKey()); }catch(e){}
+  ST={}; LOG={}; GLOG={resetAll:0}; MEMO=''; RESTORED=false; stopAudio(); render();
+}
+window.addEventListener('beforeunload', e=>{
+  if(!teacherOn && hasProgress()){ saveState(); e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ---------- PDF 직접 만들기 (인쇄 창 없이) ---------- */
+function wrapLines(ctx, text, maxW){
+  const out = [];
+  text.split('\n').forEach(line=>{
+    if(!line){ out.push(''); return; }
+    let cur = '';
+    for(const ch of line){
+      if(ctx.measureText(cur+ch).width > maxW && cur){ out.push(cur); cur = ch; } else cur += ch;
+    }
+    out.push(cur);
+  });
+  return out;
+}
+function renderPages(text){
+  const W=1240, H=1754, M=90, LH=40, maxW=W-2*M;
+  const pages = []; let cv, ctx, y;
+  const fontFam = '"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif';
+  function newPage(){
+    cv = document.createElement('canvas'); cv.width=W; cv.height=H;
+    ctx = cv.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#111'; ctx.textBaseline='top'; y = M; pages.push(cv);
+  }
+  newPage();
+  text.split('\n').forEach((raw,idx)=>{
+    const head = idx===0 || /^\[/.test(raw);
+    ctx.font = (head?'bold ':'') + (idx===0?'34px ':'27px ') + fontFam;
+    wrapLines(ctx, raw, maxW).forEach(ln=>{
+      if(y+LH > H-M){ newPage(); ctx.font = (head?'bold ':'') + '27px ' + fontFam; }
+      ctx.fillText(ln, M, y); y += (idx===0?46:LH);
+    });
+  });
+  return pages;
+}
+function b64ToBytes(b64){ const bin=atob(b64), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
+function buildPdf(pages){           // pages: [{bytes, w, h}] JPEG 이미지로 구성된 A4 PDF
+  const enc = new TextEncoder(), chunks = []; let pos = 0; const offs = [];
+  function put(x){ const b = typeof x==='string' ? enc.encode(x) : x; chunks.push(b); pos += b.length; }
+  const n = pages.length;
+  put('%PDF-1.4\n');
+  offs[1] = pos; put('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  offs[2] = pos; put('2 0 obj\n<< /Type /Pages /Count '+n+' /Kids ['+pages.map((_,i)=>(3+i*3)+' 0 R').join(' ')+'] >>\nendobj\n');
+  pages.forEach((pg,i)=>{
+    const po=3+i*3, co=po+1, io=po+2, content='q 595 0 0 842 0 0 cm /Im0 Do Q';
+    offs[po] = pos; put(po+' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 '+io+' 0 R >> >> /Contents '+co+' 0 R >>\nendobj\n');
+    offs[co] = pos; put(co+' 0 obj\n<< /Length '+content.length+' >>\nstream\n'+content+'\nendstream\nendobj\n');
+    offs[io] = pos; put(io+' 0 obj\n<< /Type /XObject /Subtype /Image /Width '+pg.w+' /Height '+pg.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+pg.bytes.length+' >>\nstream\n');
+    put(pg.bytes); put('\nendstream\nendobj\n');
+  });
+  const total = 2+n*3, xref = pos;
+  let x = 'xref\n0 '+(total+1)+'\n0000000000 65535 f \n';
+  for(let i=1;i<=total;i++) x += String(offs[i]).padStart(10,'0')+' 00000 n \n';
+  put(x+'trailer\n<< /Size '+(total+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n');
+  return new Blob(chunks, {type:'application/pdf'});
+}
+function makePdfBlob(){
+  const cvs = renderPages(resultText());
+  const pages = cvs.map(cv=>({bytes: b64ToBytes(cv.toDataURL('image/jpeg',0.88).split(',')[1]), w: cv.width, h: cv.height}));
+  return buildPdf(pages);
+}
+function fileBase(){
+  const id = ($('#sid')||{}).value||SAVED_ID||'', nm = ($('#snm')||{}).value||SAVED_NM||'';
+  return [id,nm].filter(Boolean).join('_').replace(/[\\/:*?"<>|\s]+/g,'-') || 'result';
+}
 
 /* ---------- 문장 분석: (괄호) 안이 빈칸 ---------- */
 function parseLine(l){
@@ -121,7 +223,7 @@ function playSeg(i, rate=1, track=false, force=false){
     if(audio.paused) audio.play().catch(()=>{}); else audio.pause();
     refreshPlayButtons(); return;
   }
-  if(track){ const g = L(i); if(rate===1) g.listens++; else g.slow++; }
+  if(track){ const g = L(i); if(rate===1) g.listens++; else g.slow++; persist(); }
   stopAudio();
   audio.currentTime = l.start; audio.playbackRate = rate;
   playing = {idx:i, stopAt:l.end, rate};
@@ -200,8 +302,7 @@ function resultText(){
   return out.join('\n');
 }
 function saveResult(){
-  const id = ($('#sid')||{}).value||'', nm = ($('#snm')||{}).value||'';
-  const base = [id,nm].filter(Boolean).join('_').replace(/[\\/:*?"<>|\s]+/g,'-') || 'result';
+  const base = fileBase();
   const blob = new Blob([resultText()],{type:'text/plain;charset=utf-8'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = base+'_result.txt';
   document.body.appendChild(a); a.click(); a.remove();
@@ -209,13 +310,37 @@ function saveResult(){
 function openPdfView(){
   let pv = $('#pv'); if(pv) pv.remove();
   pv = document.createElement('div'); pv.id = 'pv';
+  const canShareFile = !!(navigator.canShare && navigator.share);
   pv.innerHTML = `<div class="inner">
-    <div class="tools"><button id="pvprint" class="primary">인쇄 / PDF로 저장</button><button id="pvclose">닫기</button></div>
-    <div class="hint">"인쇄 / PDF로 저장"을 누른 뒤, 인쇄 창에서 프린터를 <b>"PDF로 저장"</b>(아이폰은 공유 → 파일에 저장)으로 선택하세요.</div>
+    <div class="tools">
+      <button id="pvpdf" class="primary">PDF 파일 저장</button>
+      ${canShareFile?'<button id="pvshare">공유 / 보내기</button>':''}
+      <button id="pvprint">인쇄 창으로 저장</button>
+      <button id="pvclose">닫기</button>
+    </div>
+    <div id="pvmsg" class="hint">"PDF 파일 저장"을 누르면 PDF가 만들어져 내려받아집니다. 안 되면 아래 방법을 순서대로 써 보세요.<br>
+    ① 카카오톡·네이버 등 앱 안에서 열었다면 Chrome(안드로이드) 또는 Safari(아이폰)로 다시 여세요. ② "공유 / 보내기"로 파일을 보내세요. ③ 그래도 안 되면 "결과 저장(txt)"이나 "결과 복사"를 쓰세요.</div>
     <pre>${esc(resultText())}</pre></div>`;
   document.body.appendChild(pv);
+  const msg = t => { $('#pvmsg').textContent = t; };
   $('#pvclose').onclick = ()=>pv.remove();
-  $('#pvprint').onclick = ()=>{ try{ window.print(); }catch(e){ alert('이 환경에서는 인쇄를 사용할 수 없어요. "결과 저장(txt)"을 이용해 주세요.'); } };
+  $('#pvpdf').onclick = ()=>{
+    try{
+      msg('PDF를 만드는 중…');
+      const blob = makePdfBlob(), url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fileBase()+'_result.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      msg('PDF를 내려받았어요. 아이폰은 Safari 주소창의 ↓ 표시나 "파일" 앱의 다운로드 폴더에서 찾을 수 있어요. 파일이 안 보이면 "공유 / 보내기"를 써 보세요.');
+    }catch(e){ msg('PDF를 만들지 못했어요(' + (e && e.message || e) + '). "결과 저장(txt)"이나 "결과 복사"를 이용해 주세요.'); }
+  };
+  if($('#pvshare')) $('#pvshare').onclick = async ()=>{
+    try{
+      const f = new File([makePdfBlob()], fileBase()+'_result.pdf', {type:'application/pdf'});
+      if(navigator.canShare({files:[f]})) await navigator.share({files:[f], title: CFG.title});
+      else msg('이 기기는 파일 공유를 지원하지 않아요. "PDF 파일 저장"을 이용해 주세요.');
+    }catch(e){ if(!e || e.name!=='AbortError') msg('공유하지 못했어요. "PDF 파일 저장"이나 "결과 저장(txt)"를 이용해 주세요.'); }
+  };
+  $('#pvprint').onclick = ()=>{ try{ window.print(); }catch(e){ msg('이 환경에서는 인쇄를 사용할 수 없어요. "PDF 파일 저장"이나 "결과 저장(txt)"을 이용해 주세요.'); } };
   pv.scrollTop = 0;
 }
 function copyResult(){
@@ -255,9 +380,11 @@ function statusHtml(l,i){
 }
 function render(focusBad){
   tap.on = false;
-  const keep = {id:($('#sid')||{}).value||'', nm:($('#snm')||{}).value||''};
+  const keep = {id: $('#sid') ? $('#sid').value : SAVED_ID, nm: $('#snm') ? $('#snm').value : SAVED_NM};
   const anyUnset = CFG.lines.some(l=>!ready(l));
   let h = `<h1>${esc(CFG.title)}</h1><p class="sub">${esc(CFG.subtitle||'')}</p>`;
+  if(RESTORED && !teacherOn){ h += `<div class="note">이전에 풀던 내용을 불러왔어요. <button id="clearall" class="small">처음부터 다시 시작</button></div>`; RESTORED = false; }
+  if(!STORAGE_OK && !teacherOn) h += `<div class="note">이 브라우저에서는 자동 저장이 되지 않을 수 있어요. 새로고침하지 말고, 중간중간 "결과 저장(txt)"이나 "결과 복사"를 해 두세요.</div>`;
   if(anyUnset && !teacherOn) h += `<div class="note">일부 문장의 구간 시간이 아직 설정되지 않았어요. 교수자 설정에서 시간을 먼저 지정해 주세요.</div>`;
   h += `<div class="bar">
     <input type="text" id="sid" placeholder="학번" value="${esc(keep.id)}">
@@ -297,15 +424,18 @@ function render(focusBad){
   </div>`;
   app.innerHTML = h;
 
+  if($('#clearall')) $('#clearall').onclick = ()=>{ if(confirm('지금까지 푼 내용과 기록이 모두 지워져요. 처음부터 다시 시작할까요?')) clearAll(); };
+  $('#sid').addEventListener('input', persist); $('#snm').addEventListener('input', persist);
   $('#kosw').onchange = e=>{ showKo = e.target.checked; render(); };
   if($('#tt')) $('#tt').onclick = ()=>{ teacherOn=false; if(location.hash==='#teacher') history.replaceState(null,'',location.pathname+location.search); render(); };
   $('#checkall').onclick = ()=>{ CFG.lines.forEach((l,i)=>{ const s=ST[i]; if(s && (s.checked || s.vals.some(v=>(v||'').trim()))) checkLine(i); }); render(); };
   $('#resetall').onclick = ()=>{ if(confirm('모든 문장을 처음부터 다시 풀까요? (풀이 기록은 남아요)')){ ST={}; GLOG.resetAll++; render(); } };
-  $('#memo').oninput = e=>{ MEMO = e.target.value; };
+  $('#memo').oninput = e=>{ MEMO = e.target.value; persist(); };
   $('#saveres').onclick = saveResult;
   $('#savepdf').onclick = openPdfView;
   $('#copyres').onclick = copyResult;
 
+  app.querySelectorAll('button').forEach(b=>{ b.addEventListener('pointerdown', ev=>{ if(ev.pointerType!=='mouse') ev.preventDefault(); }); });
   app.querySelectorAll('.card button[data-a]').forEach(b=>{
     b.onclick = ()=>{
       const i = +b.dataset.i, a = b.dataset.a;
@@ -323,7 +453,7 @@ function render(focusBad){
   app.querySelectorAll('input.bi').forEach(inp=>{
     inp.addEventListener('input', ()=>{
       const i=+inp.dataset.i, k=+inp.dataset.k, s=S(i);
-      s.vals[k] = inp.value;
+      s.vals[k] = inp.value; persist();
       if(s.checked){ s.res[k] = undefined; inp.classList.remove('ok','bad'); updateScore(); }
     });
     inp.addEventListener('keydown', e=>{
@@ -338,6 +468,7 @@ function render(focusBad){
   });
   if(teacherOn) bindTeacher();
   refreshPlayButtons();
+  persist();
 }
 
 /* ---------- 교수자 설정 ---------- */
@@ -494,6 +625,7 @@ function makeNew(){
   rd.readAsDataURL(f); msg.textContent=' 불러오는 중…';
 }
 
+loadState();
 window.addEventListener('hashchange', ()=>{ const t = location.hash==='#teacher'; if(t!==teacherOn){ teacherOn=t; render(); } });
 render();
 </script>
